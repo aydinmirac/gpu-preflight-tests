@@ -1,0 +1,18 @@
+replicaCount: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+  name: cluster-status
+
+pvc:
+  existingClaim: preflight-results
+  mountPath: /results
+
+app:
+  dataFile: /results/cluster_report.json

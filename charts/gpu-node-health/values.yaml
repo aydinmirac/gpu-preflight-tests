@@ -1,0 +1,15 @@
+image:
+  repository: ghcr.io/coreweave/nccl-tests
+  tag: 13.0.1-devel-ubuntu24.04-nccl2.29.2-1-2276a5e
+  pullPolicy: IfNotPresent
+
+expected:
+  driverVersion: "580"
+  cudaVersion: "13"
+  minGpuCount: 8
+  maxTemperature: 85
+  maxEccErrors: 0
+  maxMatmulTimeSeconds: 5
+
+nodeSelector:
+  nvidia.com/gpu.count: "8"

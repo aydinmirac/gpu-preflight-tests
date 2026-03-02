@@ -1,0 +1,6 @@
+image:
+  repository: python
+  tag: "3.11-slim"
+
+persistence:
+  claimName: preflight-results

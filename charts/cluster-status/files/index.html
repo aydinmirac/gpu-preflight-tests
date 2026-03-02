@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Cluster Status</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      padding: 20px;
+    }
+
+    .summary, .node-card {
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .node-container {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .node-card {
+      width: 300px;
+    }
+
+    .PASS {
+      border-left: 6px solid green;
+    }
+
+    .FAIL {
+      border-left: 6px solid red;
+    }
+
+    button {
+      padding: 8px 15px;
+      margin-bottom: 15px;
+      cursor: pointer;
+    }
+
+    .check {
+      margin-top: 8px;
+      padding: 6px;
+      background: #f9f9f9;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Cluster Status</h1>
+
+<button onclick="loadData()">Refresh</button>
+
+<div id="summary" class="summary"></div>
+
+<div id="nodes" class="node-container"></div>
+
+<script>
+async function loadData() {
+  try {
+    const res = await fetch("/api/status");
+    const data = await res.json();
+
+    renderSummary(data);
+    renderNodes(data.nodes);
+  } catch (err) {
+    alert("Failed to load data");
+  }
+}
+
+function renderSummary(data) {
+  document.getElementById("summary").innerHTML = `
+    <strong>Status:</strong> ${data.cluster_status}<br>
+    <strong>Generated:</strong> ${data.generated_at}<br>
+    <strong>Total Nodes:</strong> ${data.summary.total_nodes}<br>
+    <strong>Healthy Nodes:</strong> ${data.summary.healthy_nodes}<br>
+    <strong>Failed Nodes:</strong> ${data.summary.failed_nodes}<br>
+    <strong>Total GPUs:</strong> ${data.summary.total_gpus_available}
+  `;
+}
+
+function renderNodes(nodes) {
+  const container = document.getElementById("nodes");
+  container.innerHTML = "";
+
+  for (const nodeName in nodes) {
+    const node = nodes[nodeName];
+
+    const card = document.createElement("div");
+    card.className = `node-card ${node.overall_status}`;
+
+    card.innerHTML = `
+      <h3>${nodeName}</h3>
+      <strong>Overall:</strong> ${node.overall_status}
+    `;
+
+    for (const checkName in node.checks) {
+      const check = node.checks[checkName];
+
+      const div = document.createElement("div");
+      div.className = "check";
+
+      div.innerHTML = `
+        <strong>${checkName}</strong>: ${check.status}<br>
+        ${Object.entries(check)
+          .filter(([k]) => k !== "status")
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("<br>")}
+      `;
+
+      card.appendChild(div);
+    }
+
+    container.appendChild(card);
+  }
+}
+
+// Auto-load on open
+loadData();
+</script>
+
+</body>
+</html>

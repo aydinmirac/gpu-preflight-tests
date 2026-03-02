@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: storage-preflight-script
+  namespace: {{ .Release.Namespace }}
+data:
+  run_storage_test.sh: |
+    #!/bin/bash
+    set -e
+
+    # --- Ubuntu Bootstrap ---
+    echo "Installing dependencies (fio, jq, bc, curl)..."
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && apt-get install -y -qq fio jq bc curl > /dev/null
+
+    if [ ! -f /usr/local/bin/kubectl ]; then
+      echo "Installing kubectl v1.32.0..."
+      curl -L -s -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl"
+      chmod +x /usr/local/bin/kubectl
+    fi
+
+    NODE_NAME=${NODE_NAME}
+    RESULT="PASS"
+    ERRORS=()
+
+    echo "Starting storage test on $NODE_NAME"
+
+    # -----------------------
+    # Sequential Read Test
+    # -----------------------
+    fio --name=seqread \
+        --directory={{ .Values.storage.mountPath }} \
+        --size=1G \
+        --bs=1M \
+        --rw=read \
+        --direct=1 \
+        --runtime=30 \
+        --group_reporting \
+        --output-format=json > /tmp/seq.json
+
+    # Using jq to get bandwidth in KB and convert to MB
+    SEQ_KB=$(jq '.jobs[0].read.bw' /tmp/seq.json)
+    SEQ_MBPS=$(echo "$SEQ_KB / 1024" | bc)
+
+    echo "Sequential Read: $SEQ_MBPS MB/s"
+
+    if [ "$SEQ_MBPS" -lt "{{ .Values.expected.minSequentialReadMBps }}" ]; then
+      RESULT="FAIL"
+      ERRORS+=("Seq throughput $SEQ_MBPS < {{ .Values.expected.minSequentialReadMBps }}")
+    fi
+
+    # -----------------------
+    # Random Read Test
+    # -----------------------
+    fio --name=randread \
+        --directory={{ .Values.storage.mountPath }} \
+        --size=512M \
+        --bs=4k \
+        --rw=randread \
+        --iodepth=32 \
+        --runtime=30 \
+        --group_reporting \
+        --output-format=json > /tmp/rand.json
+
+    RAND_IOPS=$(jq '.jobs[0].read.iops | floor' /tmp/rand.json)
+    echo "Random Read: $RAND_IOPS IOPS"
+
+    if [ "$RAND_IOPS" -lt "{{ .Values.expected.minRandomReadIOPS }}" ]; then
+      RESULT="FAIL"
+      ERRORS+=("Random IOPS $RAND_IOPS < {{ .Values.expected.minRandomReadIOPS }}")
+    fi
+
+    # -----------------------
+    # Write JSON Result
+    # -----------------------
+    # Convert bash array to JSON array
+    ERROR_JSON=$(printf '%s\n' "${ERRORS[@]}" | jq -R . | jq -s .)
+
+    jq -n \
+      --arg node "$NODE_NAME" \
+      --arg status "$RESULT" \
+      --argjson seq "$SEQ_MBPS" \
+      --argjson rand "$RAND_IOPS" \
+      --argjson errs "$ERROR_JSON" \
+      '{node: $node, test: "storage", status: $status, metrics: {seq_read_mbps: $seq, rand_read_iops: $rand}, errors: $errs}' \
+      > "/results/${NODE_NAME}-storage.json"
+
+    # -----------------------
+    # Taint or Label
+    # -----------------------
+    if [ "$RESULT" = "FAIL" ]; then
+      kubectl taint node "$NODE_NAME" storage=degraded:NoSchedule --overwrite
+      exit 1
+    else
+      kubectl label node "$NODE_NAME" storage-status=healthy --overwrite
+      exit 0
+    fi

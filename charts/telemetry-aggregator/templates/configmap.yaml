@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-aggregator-configmap
+  namespace: {{ .Release.Namespace }}
+data:
+  aggregator.py: |
+    import os
+    import json
+    import glob
+    from datetime import datetime
+
+    RESULTS_DIR = "/results"
+    OUTPUT_FILE = "/results/cluster_report.json"
+
+    def aggregate():
+        print("Starting Telemetry Aggregation...")
+        report = {
+            "cluster_status": "READY",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "summary": {
+                "total_nodes": 0,
+                "healthy_nodes": 0,
+                "failed_nodes": 0,
+                "test_counts": {"gpu": 0, "nccl": 0, "storage": 0}
+            },
+            "nodes": {}
+        }
+
+        # Find all json files except the report itself
+        files = glob.glob(f"{RESULTS_DIR}/*.json")
+        files = [f for f in files if "cluster_report.json" not in f]
+
+        if not files:
+            print("Warning: No result files found. Is the PVC empty?")
+            report["cluster_status"] = "EMPTY_RESULTS"
+        else:
+            for file_path in files:
+                try:
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)
+                        node = data.get('node', 'unknown')
+                        test_type = data.get('test', 'unknown')
+                        
+                        if node not in report["nodes"]:
+                            report["nodes"][node] = {"overall_status": "PASS", "checks": {}}
+                        
+                        report["nodes"][node]["checks"][test_type] = data
+                        report["summary"]["test_counts"][test_type] = report["summary"]["test_counts"].get(test_type, 0) + 1
+
+                        if data.get('status') == "FAIL":
+                            report["nodes"][node]["overall_status"] = "FAIL"
+                            report["cluster_status"] = "DEGRADED"
+                except Exception as e:
+                    print(f"Error reading {file_path}: {e}")
+
+        # Final tally
+        for node_name, node_data in report["nodes"].items():
+            report["summary"]["total_nodes"] += 1
+            if node_data["overall_status"] == "FAIL":
+                report["summary"]["failed_nodes"] += 1
+            else:
+                report["summary"]["healthy_nodes"] += 1
+
+        with open(OUTPUT_FILE, 'w') as f:
+            json.dump(report, f, indent=2)
+        
+        print(f"Report written to {OUTPUT_FILE}. Final Status: {report['cluster_status']}")
+
+    if __name__ == "__main__":
+        aggregate()

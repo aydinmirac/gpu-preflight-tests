@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "telemetry-aggregator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: aggregator
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        command: ["python3", "/scripts/aggregator.py"]
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+        - name: results
+          mountPath: /results
+      volumes:
+      - name: scripts
+        configMap:
+          name: telemetry-aggregator-configmap
+      - name: results
+        persistentVolumeClaim:
+          claimName: {{ .Values.persistence.claimName }}
