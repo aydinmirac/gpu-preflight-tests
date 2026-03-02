@@ -54,7 +54,7 @@ data:
                 except Exception as e:
                     print(f"Error reading {file_path}: {e}")
 
-        # Final tally
+        # Merge the results
         for node_name, node_data in report["nodes"].items():
             report["summary"]["total_nodes"] += 1
             if node_data["overall_status"] == "FAIL":
