@@ -84,3 +84,5 @@ The dashboard will show:
 - Cluster summary (total nodes, healthy/failed nodes)
 - Per-node test results
 - Test metrics for GPU, NCCL, and storage
+
+![Cluster Dashboard](images/example-dashboard.png)
