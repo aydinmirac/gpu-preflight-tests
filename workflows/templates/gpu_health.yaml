@@ -1,0 +1,71 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: gpu-health
+spec:
+  templates:
+  - name: gpu-health
+    inputs:
+      parameters:
+      - name: node
+      - name: gpuHealthImage
+      - name: minGpuCount
+      - name: driverVersion
+      - name: cudaVersion
+      - name: maxTemperature
+      - name: maxEccErrors
+    steps:
+    - - name: clone-repo
+        templateRef:
+          name: git-clone
+          template: git-clone
+    - - name: run-test
+        template: run-gpu-health
+        arguments:
+          parameters:
+          - name: node
+            value: "{{inputs.parameters.node}}"
+          - name: gpuHealthImage
+            value: "{{inputs.parameters.gpuHealthImage}}"
+          - name: minGpuCount
+            value: "{{inputs.parameters.minGpuCount}}"
+          - name: driverVersion
+            value: "{{inputs.parameters.driverVersion}}"
+          - name: cudaVersion
+            value: "{{inputs.parameters.cudaVersion}}"
+          - name: maxTemperature
+            value: "{{inputs.parameters.maxTemperature}}"
+          - name: maxEccErrors
+            value: "{{inputs.parameters.maxEccErrors}}"
+
+  - name: run-gpu-health
+    inputs:
+      parameters:
+      - name: node
+      - name: gpuHealthImage
+      - name: minGpuCount
+      - name: driverVersion
+      - name: cudaVersion
+      - name: maxTemperature
+      - name: maxEccErrors
+    container:
+      image: "{{inputs.parameters.gpuHealthImage}}"
+      command: ["python", "/workspace/scripts/gpu/health.py"]
+      env:
+      - name: NODE_NAME
+        value: "{{inputs.parameters.node}}"
+      - name: MIN_GPU_COUNT
+        value: "{{inputs.parameters.minGpuCount}}"
+      - name: DRIVER_VERSION
+        value: "{{inputs.parameters.driverVersion}}"
+      - name: CUDA_VERSION
+        value: "{{inputs.parameters.cudaVersion}}"
+      - name: MAX_TEMPERATURE
+        value: "{{inputs.parameters.maxTemperature}}"
+      - name: MAX_ECC_ERRORS
+        value: "{{inputs.parameters.maxEccErrors}}"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: preflight-results
+        mountPath: /results

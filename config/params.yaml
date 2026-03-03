@@ -1,0 +1,12 @@
+# PVC Storage Configuration
+storageClassName: "compute-csi-default-sc"  # Override default "nfs"
+storageSize: "1Gi"    # Override default "1Gi"
+githubRepo: "https://github.com/aydinmirac/gpu-preflight-tests.git"
+
+# GPU health check configuration
+gpuHealthImage: "ghcr.io/coreweave/nccl-tests:12.8.1-devel-ubuntu22.04-nccl2.29.2-1-2276a5e"  # Default image
+minGpuCount: 8
+driverVersion: "570"
+cudaVersion: "12.8"
+maxTemperature: 85
+maxEccErrors: 0
