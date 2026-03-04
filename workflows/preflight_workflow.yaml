@@ -20,6 +20,10 @@ spec:
       value: "85"
     - name: maxEccErrors
       value: "0"
+    - name: expectedBandwidth
+      value: "100"  # Adjust based on your GPU model
+    - name: expectedLatency
+      value: "10"   # Adjust based on your GPU model
     - name: nodes
       value: '["computeinstance","computeinstance"]'
 
@@ -48,4 +52,23 @@ spec:
             value: "{{workflow.parameters.maxTemperature}}"
           - name: maxEccErrors
             value: "{{workflow.parameters.maxEccErrors}}"
+        withParam: "{{workflow.parameters.nodes}}"
+    - - name: run-nccl-tests
+        templateRef:
+          name: nccl-tests
+          template: nccl-test
+        arguments:
+          parameters:
+          - name: node
+            value: "{{item}}"
+          - name: githubRepo
+            value: "{{workflow.parameters.githubRepo}}"
+          - name: gpuHealthImage
+            value: "{{workflow.parameters.gpuHealthImage}}"
+          - name: minGpuCount
+            value: "{{workflow.parameters.minGpuCount}}"
+          - name: expectedBandwidth
+            value: "{{workflow.parameters.expectedBandwidth}}"
+          - name: expectedLatency
+            value: "{{workflow.parameters.expectedLatency}}"
         withParam: "{{workflow.parameters.nodes}}"

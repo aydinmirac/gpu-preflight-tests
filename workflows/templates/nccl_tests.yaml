@@ -1,57 +1,52 @@
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
-  name: gpu-health
+  name: nccl-tests
 spec:
   templates:
-  - name: gpu-health
+  - name: nccl-test
     inputs:
       parameters:
       - name: node
       - name: githubRepo
       - name: gpuHealthImage
       - name: minGpuCount
-      - name: driverVersion
-      - name: cudaVersion
-      - name: maxTemperature
-      - name: maxEccErrors
+      - name: expectedBandwidth
+      - name: expectedLatency
     container:
       image: "{{inputs.parameters.gpuHealthImage}}"
       command: ["sh", "-c"]
       args:
         - |
-          # Clone repo if missing or pull latest changes
+          # Clone repo if missing
           if [ ! -d "/workspace/repo/.git" ]; then
             git clone --depth 1 {{inputs.parameters.githubRepo}} /workspace/repo
           else
             cd /workspace/repo && git pull
           fi
 
-          # Run GPU health Python script
-          python3 /workspace/repo/scripts/gpu_health.py
+          # Run NCCL tests
+          python3 /workspace/repo/scripts/nccl_tests.py
       resources:
         requests:
-          nvidia.com/gpu: 8
+          nvidia.com/gpu: "{{inputs.parameters.minGpuCount}}"
         limits:
-          nvidia.com/gpu: 8
+          nvidia.com/gpu: "{{inputs.parameters.minGpuCount}}"
       env:
       - name: NODE_NAME
         value: "{{inputs.parameters.node}}"
       - name: MIN_GPU_COUNT
         value: "{{inputs.parameters.minGpuCount}}"
-      - name: DRIVER_VERSION
-        value: "{{inputs.parameters.driverVersion}}"
-      - name: CUDA_VERSION
-        value: "{{inputs.parameters.cudaVersion}}"
-      - name: MAX_TEMPERATURE
-        value: "{{inputs.parameters.maxTemperature}}"
-      - name: MAX_ECC_ERRORS
-        value: "{{inputs.parameters.maxEccErrors}}"
+      - name: EXPECTED_BANDWIDTH
+        value: "{{inputs.parameters.expectedBandwidth}}"
+      - name: EXPECTED_LATENCY
+        value: "{{inputs.parameters.expectedLatency}}"
       volumeMounts:
       - name: workspace
         mountPath: /workspace
       - name: workspace
         mountPath: /results
+        subPath: results
     nodeSelector:
       kubernetes.io/hostname: "{{inputs.parameters.node}}"
     tolerations:
