@@ -18,14 +18,14 @@ result = {
     "node": NODE_NAME,
     "test": "gpu_health",
     "timestamp": datetime.now().isoformat(),
-    "status": "PASS",  
+    "status": "PASS",
     "metrics": {
         "driver_version": None,
         "cuda_version": None,
         "gpu_count": 0,
         "gpus": []
     },
-    "errors": []  
+    "errors": []
 }
 
 def record_error(msg):
@@ -48,6 +48,8 @@ def run_command(cmd):
 try:
     driver_version = run_command(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"])
     if driver_version:
+        # Take first line if multiple GPUs
+        driver_version = driver_version.split('\n')[0]
         result["metrics"]["driver_version"] = driver_version
         if not driver_version.startswith(EXPECTED_DRIVER_VERSION):
             record_error(f"Driver version mismatch. Expected: {EXPECTED_DRIVER_VERSION}, Found: {driver_version}")
@@ -73,6 +75,7 @@ try:
         # Fall back to nvidia-smi
         cuda_version = run_command(["nvidia-smi", "--query-gpu=cuda_version", "--format=csv,noheader"])
         if cuda_version:
+            cuda_version = cuda_version.split('\n')[0]
             result["metrics"]["cuda_version"] = cuda_version
             if EXPECTED_CUDA_VERSION not in cuda_version:
                 record_error(f"CUDA version mismatch. Expected: {EXPECTED_CUDA_VERSION}, Found: {cuda_version}")
@@ -83,10 +86,9 @@ except Exception as e:
 
 # Check GPU Count and Health
 try:
-    # Get GPU count
-    gpu_count_output = run_command(["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"])
-    if gpu_count_output:
-        gpu_count = int(gpu_count_output)
+    gpu_list = run_command(["nvidia-smi", "-L"])
+    if gpu_list:
+        gpu_count = len(gpu_list.strip().split('\n'))
         result["metrics"]["gpu_count"] = gpu_count
         if gpu_count < EXPECTED_GPU_COUNT:
             record_error(f"Insufficient GPUs. Expected: {EXPECTED_GPU_COUNT}, Found: {gpu_count}")
@@ -106,7 +108,7 @@ try:
                 continue
 
             parts = [p.strip() for p in line.split(',')]
-            if len(parts) < 5:
+            if len(parts) < 6:  
                 record_error(f"Unexpected GPU info format: {line}")
                 continue
 
@@ -115,7 +117,7 @@ try:
                 gpu_data = {
                     "index": int(gpu_index),
                     "name": name,
-                    "temperature": int(temp),
+                    "temperature": int(temp.split()[0]),
                     "ecc_errors": int(ecc_errors),
                     "utilization": utilization,
                     "power": power
@@ -123,8 +125,8 @@ try:
                 result["metrics"]["gpus"].append(gpu_data)
 
                 # Check temperature
-                if int(temp) > MAX_TEMPERATURE:
-                    record_error(f"GPU {gpu_index} temperature too high: {temp}°C")
+                if int(temp.split()[0]) > MAX_TEMPERATURE:
+                    record_error(f"GPU {gpu_index} temperature too high: {temp}")
 
                 # Check ECC errors
                 if int(ecc_errors) > MAX_ECC_ERRORS:
