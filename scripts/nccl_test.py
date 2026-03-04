@@ -151,7 +151,7 @@ def run_nccl_test(size="1G"):
         "raw_output": output
     }
 
-    bandwidth, latency = parse_nccl_output(output)
+    bandwidth, latency = parse_nccl_output(output, expected_max_size=size)
     if bandwidth is not None and latency is not None:
         test_result["bandwidth"] = bandwidth
         test_result["latency"] = latency
