@@ -245,19 +245,37 @@ try:
         bandwidths = []
         latencies = []
 
+        MIN_SIZE_FOR_BW_CHECK = parse_size_to_bytes("256M")
+        MAX_SIZE_FOR_LAT_CHECK = parse_size_to_bytes("1M")
+
         for size in sizes:
             test_result = run_nccl_test(size=size)
-            if test_result:
-                nccl_result["metrics"]["tests"].append(test_result)
-                if test_result["bandwidth"] > 0:  # Only add valid results
-                    bandwidths.append(test_result["bandwidth"])
-                    latencies.append(test_result["latency"])
+            if not test_result:
+                continue
 
-                # Check against thresholds
+            # store per-size test result
+            nccl_result["metrics"]["tests"].append(test_result)
+
+            # collect valid metrics for summary
+            if test_result["bandwidth"] and test_result["bandwidth"] > 0:
+                bandwidths.append(test_result["bandwidth"])
+            if test_result["latency"] and test_result["latency"] > 0:
+                latencies.append(test_result["latency"])
+
+            # gated threshold checks
+            size_bytes = parse_size_to_bytes(size)
+
+            if size_bytes >= MIN_SIZE_FOR_BW_CHECK and test_result["bandwidth"] > 0:
                 if test_result["bandwidth"] < EXPECTED_BANDWIDTH * 0.8:
-                    record_error(f"Bandwidth below threshold for size {size}: {test_result['bandwidth']} GB/s")
+                    record_error(
+                        f"Bandwidth below threshold for size {size}: {test_result['bandwidth']} GB/s"
+                    )
+
+            if size_bytes <= MAX_SIZE_FOR_LAT_CHECK and test_result["latency"] > 0:
                 if test_result["latency"] > EXPECTED_LATENCY * 1.2:
-                    record_error(f"Latency above threshold for size {size}: {test_result['latency']} us")
+                    record_error(
+                        f"Latency above threshold for size {size}: {test_result['latency']} us"
+                    )
 
         # Calculate summary metrics (only if we have valid results)
         if bandwidths:
