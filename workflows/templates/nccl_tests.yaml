@@ -26,12 +26,12 @@ spec:
           fi
 
           # Run NCCL tests
-          python3 /workspace/repo/scripts/nccl_tests.py
+          python3 /workspace/repo/scripts/nccl_test.py
       resources:
         requests:
-          nvidia.com/gpu: "{{inputs.parameters.minGpuCount}}"
+          nvidia.com/gpu: 8
         limits:
-          nvidia.com/gpu: "{{inputs.parameters.minGpuCount}}"
+          nvidia.com/gpu: 8
       env:
       - name: NODE_NAME
         value: "{{inputs.parameters.node}}"

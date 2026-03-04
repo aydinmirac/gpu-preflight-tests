@@ -3,6 +3,7 @@ kind: WorkflowTemplate
 metadata:
   name: preflight-tests
 spec:
+  serviceAccountName: argo-workflow
   entrypoint: preflight-checks
   arguments:
     parameters:

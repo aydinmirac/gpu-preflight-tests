@@ -7,7 +7,7 @@ from datetime import datetime
 
 # Configuration from environment variables
 NODE_NAME = os.environ.get("NODE_NAME", "unknown")
-MIN_GPU_COUNT = int(os.environ.get("MIN_GPU_COUNT", "2"))  # Fallback value
+MIN_GPU_COUNT = int(os.environ.get("MIN_GPU_COUNT", "2"))  # Minimum GPUs for NCCL
 EXPECTED_BANDWIDTH = float(os.environ.get("EXPECTED_BANDWIDTH", "100"))  # GB/s
 EXPECTED_LATENCY = float(os.environ.get("EXPECTED_LATENCY", "10"))  # microseconds
 
@@ -18,7 +18,7 @@ result = {
     "timestamp": datetime.now().isoformat(),
     "status": "PASS",
     "metrics": {
-        "gpu_count": 0,  # Will be populated from existing results
+        "gpu_count": 0,
         "tests": [],
         "summary": {
             "avg_bandwidth": 0,
@@ -31,7 +31,7 @@ result = {
 }
 
 def record_error(msg):
-    """Record an error (doesn't exit, just collects errors)"""
+    """Record an error"""
     result["errors"].append(msg)
     result["status"] = "FAIL"
 
@@ -46,11 +46,19 @@ def run_command(cmd):
         record_error(f"Unexpected error running {cmd}: {str(e)}")
         return None
 
-def run_nccl_test(size="1G", gpus="all"):
-    """Run NCCL all_reduce_perf test"""
-    cmd = f"mpirun --allow-run-as-root -np {result['metrics']['gpu_count']} -x NCCL_DEBUG=INFO "
-    cmd += f"-x CUDA_VISIBLE_DEVICES=0,{','.join(str(i) for i in range(1, result['metrics']['gpu_count']))} "
-    cmd += f"all_reduce_perf -b 8 -e {size} -f 2 -g 1"
+def run_nccl_test(size="1G"):
+    """Run NCCL all_reduce_perf test directly"""
+    # Ensure we have a valid GPU count
+    gpu_count = result['metrics']['gpu_count']
+    if gpu_count < MIN_GPU_COUNT:
+        record_error(f"Insufficient GPUs for NCCL test. Need at least {MIN_GPU_COUNT}, found: {gpu_count}")
+        return None
+
+    # Set up GPU selection
+    gpu_list = ",".join(str(i) for i in range(gpu_count))
+
+    # Run the test directly using the correct path
+    cmd = f"CUDA_VISIBLE_DEVICES={gpu_list} /opt/nccl-tests/build/all_reduce_perf -b 8 -e {size} -f 2 -g {gpu_count}"
 
     output = run_command(cmd)
     if not output:
@@ -68,8 +76,8 @@ def run_nccl_test(size="1G", gpus="all"):
         if "out-of-place" in line and "Bandwidth" in line:
             parts = line.split()
             try:
-                test_result["bandwidth"] = float(parts[6])  # GB/s
-                test_result["latency"] = float(parts[8])    # us
+                test_result["bandwidth"] = float(parts[6])
+                test_result["latency"] = float(parts[8])
             except (IndexError, ValueError):
                 record_error(f"Failed to parse NCCL output: {line}")
 
@@ -77,7 +85,7 @@ def run_nccl_test(size="1G", gpus="all"):
 
 def load_existing_results():
     """Load existing results file if it exists"""
-    results_file = f"/results/{NODE_NAME}-gpu_health.json"
+    results_file = f"/results/{NODE_NAME}-results.json"
     if os.path.exists(results_file):
         try:
             with open(results_file, 'r') as f:
@@ -87,8 +95,8 @@ def load_existing_results():
     return None
 
 def save_results():
-    """Save results to JSON file, aggregating with existing results if present"""
-    results_file = f"/results/{NODE_NAME}-gpu_health.json"
+    """Save results to JSON file"""
+    results_file = f"/results/{NODE_NAME}-results.json"
     temp_file = f"{results_file}.tmp"
 
     # Load existing results if they exist
@@ -97,27 +105,19 @@ def save_results():
     if existing_results:
         # Merge with existing results
         merged_results = existing_results
-
-        # Update timestamp
         merged_results["timestamp"] = datetime.now().isoformat()
 
-        # Get GPU count from existing results if available
+        # Get GPU count from existing results
         if "tests" in merged_results:
             for test in merged_results["tests"]:
                 if test.get("test") == "gpu_health" and "metrics" in test and "gpu_count" in test["metrics"]:
                     result["metrics"]["gpu_count"] = test["metrics"]["gpu_count"]
                     break
 
-        # If we still don't have GPU count, use the fallback
+        # If we still don't have GPU count, use fallback
         if result["metrics"]["gpu_count"] == 0:
             result["metrics"]["gpu_count"] = MIN_GPU_COUNT
-            record_error(f"Could not find GPU count in existing results, using fallback value: {MIN_GPU_COUNT}")
-
-        # Check if we have enough GPUs
-        if result["metrics"]["gpu_count"] < MIN_GPU_COUNT:
-            record_error(f"Insufficient GPUs for NCCL test. Expected: {MIN_GPU_COUNT}, Found: {result['metrics']['gpu_count']}")
-            save_and_exit()
-            return
+            record_error(f"Could not find GPU count in existing results, using fallback: {MIN_GPU_COUNT}")
 
         # Add or update our test results
         test_found = False
@@ -141,15 +141,9 @@ def save_results():
         with open(temp_file, 'w') as f:
             json.dump(merged_results, f, indent=2)
     else:
-        # Create new results structure with fallback GPU count
+        # Create new results structure
         result["metrics"]["gpu_count"] = MIN_GPU_COUNT
         record_error(f"No existing results found, using fallback GPU count: {MIN_GPU_COUNT}")
-
-        # Check if we have enough GPUs
-        if result["metrics"]["gpu_count"] < MIN_GPU_COUNT:
-            record_error(f"Insufficient GPUs for NCCL test. Expected: {MIN_GPU_COUNT}, Found: {result['metrics']['gpu_count']}")
-            save_and_exit()
-            return
 
         merged_results = {
             "node": NODE_NAME,
@@ -166,16 +160,6 @@ def save_results():
     os.rename(temp_file, results_file)
     print(f"Results written to {results_file}")
 
-def save_and_exit():
-    """Save results and exit with error status"""
-    save_results()
-    print(f"Node {NODE_NAME} - NCCL Intra-Node Test: {result['status']}")
-    if result["errors"]:
-        print("Errors encountered:")
-        for error in result["errors"]:
-            print(f"  - {error}")
-    sys.exit(1)
-
 try:
     # Run NCCL tests with different message sizes
     sizes = ["1M", "32M", "256M", "1G", "4G"]
@@ -190,9 +174,9 @@ try:
             latencies.append(test_result["latency"])
 
             # Check against thresholds
-            if test_result["bandwidth"] < EXPECTED_BANDWIDTH * 0.8:  # 80% of expected
+            if test_result["bandwidth"] < EXPECTED_BANDWIDTH * 0.8:
                 record_error(f"Bandwidth below threshold for size {size}: {test_result['bandwidth']} GB/s")
-            if test_result["latency"] > EXPECTED_LATENCY * 1.2:  # 20% above expected
+            if test_result["latency"] > EXPECTED_LATENCY * 1.2:
                 record_error(f"Latency above threshold for size {size}: {test_result['latency']} us")
 
     # Calculate summary metrics
@@ -206,15 +190,14 @@ try:
 except Exception as e:
     record_error(f"NCCL test failed: {str(e)}")
 
-# Save results (aggregating with existing results if present)
+# Save results
 save_results()
 
-# Print summary for logging
+# Print summary
 print(f"Node {NODE_NAME} - NCCL Intra-Node Test: {result['status']}")
 if result["errors"]:
     print("Errors encountered:")
     for error in result["errors"]:
         print(f"  - {error}")
 
-# Exit with status code (0 for PASS, 1 for FAIL)
 sys.exit(0 if result["status"] == "PASS" else 1)
