@@ -96,7 +96,7 @@ try:
     # Get detailed GPU info
     gpu_info = run_command([
         "nvidia-smi",
-        "--query-gpu=index,name,temperature.gpu,ecc.errors.uncorrected.volatile,utilization.gpu,power.draw",
+        "--query-gpu=index,name,temperature.gpu,ecc.errors.uncorrected.volatile.device_memory,utilization.gpu,power.draw",
         "--format=csv,noheader"
     ])
 

@@ -8,40 +8,7 @@ spec:
     inputs:
       parameters:
       - name: node
-      - name: gpuHealthImage
-      - name: minGpuCount
-      - name: driverVersion
-      - name: cudaVersion
-      - name: maxTemperature
-      - name: maxEccErrors
-    steps:
-    - - name: clone-repo
-        templateRef:
-          name: git-clone
-          template: git-clone
-    - - name: run-test
-        template: run-gpu-health
-        arguments:
-          parameters:
-          - name: node
-            value: "{{inputs.parameters.node}}"
-          - name: gpuHealthImage
-            value: "{{inputs.parameters.gpuHealthImage}}"
-          - name: minGpuCount
-            value: "{{inputs.parameters.minGpuCount}}"
-          - name: driverVersion
-            value: "{{inputs.parameters.driverVersion}}"
-          - name: cudaVersion
-            value: "{{inputs.parameters.cudaVersion}}"
-          - name: maxTemperature
-            value: "{{inputs.parameters.maxTemperature}}"
-          - name: maxEccErrors
-            value: "{{inputs.parameters.maxEccErrors}}"
-
-  - name: run-gpu-health
-    inputs:
-      parameters:
-      - name: node
+      - name: githubRepo
       - name: gpuHealthImage
       - name: minGpuCount
       - name: driverVersion
@@ -50,7 +17,23 @@ spec:
       - name: maxEccErrors
     container:
       image: "{{inputs.parameters.gpuHealthImage}}"
-      command: ["python", "/workspace/scripts/gpu/health.py"]
+      command: ["sh", "-c"]
+      args:
+        - |
+          # Clone repo if missing or pull latest changes
+          if [ ! -d "/workspace/repo/.git" ]; then
+            git clone --depth 1 {{inputs.parameters.githubRepo}} /workspace/repo
+          else
+            cd /workspace/repo && git pull
+          fi
+
+          # Run GPU health Python script
+          python3 /workspace/repo/scripts/gpu_health.py
+      resources:
+        requests:
+          nvidia.com/gpu: {{inputs.parameters.minGpuCount}}
+        limits:
+          nvidia.com/gpu: {{inputs.parameters.minGpuCount}}
       env:
       - name: NODE_NAME
         value: "{{inputs.parameters.node}}"
@@ -67,5 +50,13 @@ spec:
       volumeMounts:
       - name: workspace
         mountPath: /workspace
-      - name: preflight-results
-        mountPath: /results
+    nodeSelector:
+      kubernetes.io/hostname: "{{inputs.parameters.node}}"
+    tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+    volumes:
+    - name: workspace
+      persistentVolumeClaim:
+        claimName: preflight-tests-workspace

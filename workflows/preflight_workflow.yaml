@@ -1,56 +1,41 @@
 apiVersion: argoproj.io/v1alpha1
-kind: Workflow
+kind: WorkflowTemplate
 metadata:
   name: preflight-tests
 spec:
-  # Workflow-level parameters (defaults can be overridden via CLI)
+  entrypoint: preflight-checks
   arguments:
     parameters:
+    - name: githubRepo
+      value: "https://github.com/username/gpu-preflight-tests.git"
     - name: gpuHealthImage
-      value: "nvidia/cuda:12.2.0-base"
+      value: "ghcr.io/coreweave/nccl-tests:12.8.1-devel-ubuntu22.04-nccl2.29.2-1-2276a5e"
     - name: minGpuCount
       value: "8"
     - name: driverVersion
-      value: "580"
+      value: "570"
     - name: cudaVersion
-      value: "12.2"
+      value: "12.8"
     - name: maxTemperature
       value: "85"
-    - name: githubRepo
-      value: "https://github.com/your-org/preflight-tests.git"
-    - name: storageClassName
-      value: "nfs"
-    - name: storageSize
-      value: "1Gi"
+    - name: maxEccErrors
+      value: "0"
+    - name: nodes
+      value: '["computeinstance","computeinstance"]'
 
-  # Dynamic PVC creation
-  volumeClaimTemplates:
-  - metadata:
-      name: preflight-results
-    spec:
-      accessModes: [ReadWriteMany]
-      resources:
-        requests:
-          storage: "{{workflow.parameters.storageSize}}"
-      storageClassName: "{{workflow.parameters.storageClassName}}"
-
-  # Workspace volume for GitHub code
-  volumes:
-  - name: workspace
-    emptyDir: {}
-
-  # Workflow templates
   templates:
   - name: preflight-checks
     steps:
-    - - name: discover-nodes
-        template: discover-nodes
     - - name: run-gpu-health
-        template: gpu-health
+        templateRef:
+          name: gpu-health
+          template: gpu-health
         arguments:
           parameters:
           - name: node
             value: "{{item}}"
+          - name: githubRepo
+            value: "{{workflow.parameters.githubRepo}}"
           - name: gpuHealthImage
             value: "{{workflow.parameters.gpuHealthImage}}"
           - name: minGpuCount
@@ -61,74 +46,6 @@ spec:
             value: "{{workflow.parameters.cudaVersion}}"
           - name: maxTemperature
             value: "{{workflow.parameters.maxTemperature}}"
-        withParam: "{{steps.discover-nodes.outputs.parameters.nodes}}"
-
-  - name: discover-nodes
-    script:
-      image: bitnami/kubectl
-      command: [sh]
-      source: |
-        kubectl get nodes -l nvidia.com/gpu.count -o jsonpath='{.items[*].metadata.name}' > /tmp/nodes
-    outputs:
-      parameters:
-      - name: nodes
-        valueFrom:
-          path: /tmp/nodes
-
-  - name: gpu-health
-    inputs:
-      parameters:
-      - name: node
-      - name: minGpuCount
-      - name: driverVersion
-      - name: cudaVersion
-      - name: maxTemperature
-    steps:
-    - - name: clone-repo
-        template: git-clone
-    - - name: run-test
-        template: run-gpu-health
-        arguments:
-          parameters:
-          - name: node
-            value: "{{inputs.parameters.node}}"
-          - name: minGpuCount
-            value: "{{inputs.parameters.minGpuCount}}"
-          - name: driverVersion
-            value: "{{inputs.parameters.driverVersion}}"
-          - name: cudaVersion
-            value: "{{inputs.parameters.cudaVersion}}"
-          - name: maxTemperature
-            value: "{{inputs.parameters.maxTemperature}}"
-
-  - name: git-clone
-    script:
-      image: alpine/git
-      command: [sh]
-      source: |
-        git clone --depth 1 {{workflow.parameters.githubRepo}} /workspace
-      volumeMounts:
-      - name: workspace
-        mountPath: /workspace
-
-  - - name: run-gpu-health
-      templateRef:
-        name: gpu-health
-        template: gpu-health
-      arguments:
-        parameters:
-        - name: node
-          value: "{{item}}"
-        - name: gpuHealthImage
-          value: "{{workflow.parameters.gpuHealthImage}}"
-        - name: minGpuCount
-          value: "{{workflow.parameters.minGpuCount}}"
-        - name: driverVersion
-          value: "{{workflow.parameters.driverVersion}}"
-        - name: cudaVersion
-          value: "{{workflow.parameters.cudaVersion}}"
-        - name: maxTemperature
-          value: "{{workflow.parameters.maxTemperature}}"
-        - name: maxEccErrors
-          value: "{{workflow.parameters.maxEccErrors}}"
-      withParam: "{{steps.discover-nodes.outputs.parameters.nodes}}"
+          - name: maxEccErrors
+            value: "{{workflow.parameters.maxEccErrors}}"
+        withParam: "{{workflow.parameters.nodes}}"
