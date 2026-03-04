@@ -11,9 +11,8 @@ MIN_GPU_COUNT = int(os.environ.get("MIN_GPU_COUNT", "2"))  # Minimum GPUs for NC
 EXPECTED_BANDWIDTH = float(os.environ.get("EXPECTED_BANDWIDTH", "100"))  # GB/s
 EXPECTED_LATENCY = float(os.environ.get("EXPECTED_LATENCY", "10"))  # microseconds
 
-# Initialize result structure
-result = {
-    "node": NODE_NAME,
+# Initialize result structure for this test
+nccl_result = {
     "test": "nccl_intra_node",
     "timestamp": datetime.now().isoformat(),
     "status": "PASS",
@@ -30,9 +29,18 @@ result = {
     "errors": []
 }
 
+# Initialize the aggregated results structure
+result = {
+    "node": NODE_NAME,
+    "timestamp": datetime.now().isoformat(),
+    "status": "PASS",
+    "tests": []
+}
+
 def record_error(msg):
     """Record an error"""
-    result["errors"].append(msg)
+    nccl_result["errors"].append(msg)
+    nccl_result["status"] = "FAIL"
     result["status"] = "FAIL"
 
 def run_command(cmd):
@@ -49,7 +57,7 @@ def run_command(cmd):
 def run_nccl_test(size="1G"):
     """Run NCCL all_reduce_perf test directly"""
     # Ensure we have a valid GPU count
-    gpu_count = result['metrics']['gpu_count']
+    gpu_count = nccl_result['metrics']['gpu_count']
     if gpu_count < MIN_GPU_COUNT:
         record_error(f"Insufficient GPUs for NCCL test. Need at least {MIN_GPU_COUNT}, found: {gpu_count}")
         return None
@@ -103,101 +111,106 @@ def save_results():
     existing_results = load_existing_results()
 
     if existing_results:
-        # Merge with existing results
-        merged_results = existing_results
-        merged_results["timestamp"] = datetime.now().isoformat()
+        # Update the existing results
+        updated_results = existing_results
 
         # Get GPU count from existing results
-        if "tests" in merged_results:
-            for test in merged_results["tests"]:
-                if test.get("test") == "gpu_health" and "metrics" in test and "gpu_count" in test["metrics"]:
-                    result["metrics"]["gpu_count"] = test["metrics"]["gpu_count"]
+        if "tests" in existing_results:
+            for test in existing_results["tests"]:
+                if test.get("test") == "gpu_health" and "metrics" in test:
+                    nccl_result["metrics"]["gpu_count"] = test["metrics"].get("gpu_count", 0)
                     break
 
-        # If we still don't have GPU count, use fallback
-        if result["metrics"]["gpu_count"] == 0:
-            result["metrics"]["gpu_count"] = MIN_GPU_COUNT
-            record_error(f"Could not find GPU count in existing results, using fallback: {MIN_GPU_COUNT}")
+        # Update timestamp
+        updated_results["timestamp"] = datetime.now().isoformat()
 
-        # Add or update our test results
-        test_found = False
-        for i, test in enumerate(merged_results.get("tests", [])):
-            if test.get("test") == "nccl_intra_node":
-                merged_results["tests"][i] = result
-                test_found = True
-                break
-
-        if not test_found:
-            if "tests" not in merged_results:
-                merged_results["tests"] = []
-            merged_results["tests"].append(result)
+        # Append our test results
+        updated_results["tests"].append(nccl_result)
 
         # Update overall status
-        merged_results["status"] = "PASS" if all(
-            test.get("status") == "PASS" for test in merged_results.get("tests", [])
+        updated_results["status"] = "PASS" if all(
+            test.get("status") == "PASS" for test in updated_results["tests"]
         ) else "FAIL"
 
-        # Write merged results
+        # Write updated results
         with open(temp_file, 'w') as f:
-            json.dump(merged_results, f, indent=2)
+            json.dump(updated_results, f, indent=2)
     else:
         # Create new results structure
-        result["metrics"]["gpu_count"] = MIN_GPU_COUNT
+        nccl_result["metrics"]["gpu_count"] = MIN_GPU_COUNT
         record_error(f"No existing results found, using fallback GPU count: {MIN_GPU_COUNT}")
 
-        merged_results = {
-            "node": NODE_NAME,
-            "timestamp": datetime.now().isoformat(),
-            "status": result["status"],
-            "tests": [result]
-        }
-
-        # Write new results
+        result["tests"].append(nccl_result)
         with open(temp_file, 'w') as f:
-            json.dump(merged_results, f, indent=2)
+            json.dump(result, f, indent=2)
 
     # Atomic rename
     os.rename(temp_file, results_file)
     print(f"Results written to {results_file}")
 
 try:
-    # Run NCCL tests with different message sizes
-    sizes = ["1M", "32M", "256M", "1G", "4G"]
-    bandwidths = []
-    latencies = []
+    # First try to get GPU count from existing results
+    existing_results = load_existing_results()
+    if existing_results and "tests" in existing_results:
+        for test in existing_results["tests"]:
+            if test.get("test") == "gpu_health" and "metrics" in test:
+                nccl_result["metrics"]["gpu_count"] = test["metrics"].get("gpu_count", 0)
+                break
 
-    for size in sizes:
-        test_result = run_nccl_test(size=size)
-        if test_result:
-            result["metrics"]["tests"].append(test_result)
-            bandwidths.append(test_result["bandwidth"])
-            latencies.append(test_result["latency"])
+    # If still no GPU count, get it from system
+    if nccl_result["metrics"]["gpu_count"] == 0:
+        try:
+            output = run_command("nvidia-smi -L | wc -l")
+            if output:
+                nccl_result["metrics"]["gpu_count"] = int(output.strip())
+        except Exception as e:
+            record_error(f"Failed to get GPU count from system: {str(e)}")
+            nccl_result["metrics"]["gpu_count"] = MIN_GPU_COUNT
 
-            # Check against thresholds
-            if test_result["bandwidth"] < EXPECTED_BANDWIDTH * 0.8:
-                record_error(f"Bandwidth below threshold for size {size}: {test_result['bandwidth']} GB/s")
-            if test_result["latency"] > EXPECTED_LATENCY * 1.2:
-                record_error(f"Latency above threshold for size {size}: {test_result['latency']} us")
+    # Verify we have enough GPUs
+    if nccl_result["metrics"]["gpu_count"] < MIN_GPU_COUNT:
+        record_error(f"Insufficient GPUs for NCCL test. Need at least {MIN_GPU_COUNT}, found: {nccl_result['metrics']['gpu_count']}")
+    else:
+        # Run NCCL tests with different message sizes
+        sizes = ["1M", "32M", "256M", "1G", "4G"]
+        bandwidths = []
+        latencies = []
 
-    # Calculate summary metrics
-    if bandwidths:
-        result["metrics"]["summary"]["avg_bandwidth"] = sum(bandwidths) / len(bandwidths)
-        result["metrics"]["summary"]["min_bandwidth"] = min(bandwidths)
-    if latencies:
-        result["metrics"]["summary"]["avg_latency"] = sum(latencies) / len(latencies)
-        result["metrics"]["summary"]["max_latency"] = max(latencies)
+        for size in sizes:
+            test_result = run_nccl_test(size=size)
+            if test_result:
+                nccl_result["metrics"]["tests"].append(test_result)
+                bandwidths.append(test_result["bandwidth"])
+                latencies.append(test_result["latency"])
+
+                # Check against thresholds
+                if test_result["bandwidth"] < EXPECTED_BANDWIDTH * 0.8:
+                    record_error(f"Bandwidth below threshold for size {size}: {test_result['bandwidth']} GB/s")
+                if test_result["latency"] > EXPECTED_LATENCY * 1.2:
+                    record_error(f"Latency above threshold for size {size}: {test_result['latency']} us")
+
+        # Calculate summary metrics
+        if bandwidths:
+            nccl_result["metrics"]["summary"]["avg_bandwidth"] = sum(bandwidths) / len(bandwidths)
+            nccl_result["metrics"]["summary"]["min_bandwidth"] = min(bandwidths)
+        if latencies:
+            nccl_result["metrics"]["summary"]["avg_latency"] = sum(latencies) / len(latencies)
+            nccl_result["metrics"]["summary"]["max_latency"] = max(latencies)
 
 except Exception as e:
     record_error(f"NCCL test failed: {str(e)}")
+
+# Add the test result to the aggregated results
+result["tests"].append(nccl_result)
 
 # Save results
 save_results()
 
 # Print summary
-print(f"Node {NODE_NAME} - NCCL Intra-Node Test: {result['status']}")
-if result["errors"]:
+print(f"Node {NODE_NAME} - NCCL Intra-Node Test: {nccl_result['status']}")
+if nccl_result["errors"]:
     print("Errors encountered:")
-    for error in result["errors"]:
+    for error in nccl_result["errors"]:
         print(f"  - {error}")
 
-sys.exit(0 if result["status"] == "PASS" else 1)
+sys.exit(0 if nccl_result["status"] == "PASS" else 1)

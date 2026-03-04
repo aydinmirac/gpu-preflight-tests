@@ -46,7 +46,6 @@ spec:
         mountPath: /workspace
       - name: workspace
         mountPath: /results
-        subPath: results
     nodeSelector:
       kubernetes.io/hostname: "{{inputs.parameters.node}}"
     tolerations:
