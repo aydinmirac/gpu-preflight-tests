@@ -41,6 +41,12 @@ spec:
         value: "{{inputs.parameters.expectedBandwidth}}"
       - name: EXPECTED_LATENCY
         value: "{{inputs.parameters.expectedLatency}}"
+      - name: UCX_MEMTYPE_CACHE
+        value: "n"
+      - name: UCX_TLS
+        value: "tcp"
+      - name: UCX_RNDV_SCHEME
+        value: "put_zcopy"
       volumeMounts:
       - name: workspace
         mountPath: /workspace

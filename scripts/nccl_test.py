@@ -3,6 +3,7 @@ import subprocess
 import json
 import os
 import sys
+import re
 from datetime import datetime
 
 # Configuration from environment variables
@@ -54,6 +55,27 @@ def run_command(cmd):
         record_error(f"Unexpected error running {cmd}: {str(e)}")
         return None
 
+def parse_nccl_output(output):
+    """Parse NCCL test output to extract bandwidth and latency"""
+    # Check for UCX errors
+    if "UCX ERROR" in output:
+        record_error("UCX memory allocation error detected")
+        return None, None
+
+    # Find the last line with bandwidth data
+    lines = output.split('\n')
+    for line in reversed(lines):
+        if "out-of-place" in line and "Bandwidth" not in line:
+            parts = line.split()
+            if len(parts) >= 7:
+                try:
+                    bandwidth = float(parts[4])  # algbw column
+                    latency = float(parts[2])    # time column
+                    return bandwidth, latency
+                except (ValueError, IndexError):
+                    continue
+    return None, None
+
 def run_nccl_test(size="1G"):
     """Run NCCL all_reduce_perf test directly"""
     # Ensure we have a valid GPU count
@@ -80,14 +102,12 @@ def run_nccl_test(size="1G"):
         "raw_output": output
     }
 
-    for line in output.split('\n'):
-        if "out-of-place" in line and "Bandwidth" in line:
-            parts = line.split()
-            try:
-                test_result["bandwidth"] = float(parts[6])
-                test_result["latency"] = float(parts[8])
-            except (IndexError, ValueError):
-                record_error(f"Failed to parse NCCL output: {line}")
+    bandwidth, latency = parse_nccl_output(output)
+    if bandwidth is not None and latency is not None:
+        test_result["bandwidth"] = bandwidth
+        test_result["latency"] = latency
+    else:
+        record_error(f"Failed to parse NCCL output for size {size}")
 
     return test_result
 
@@ -113,6 +133,7 @@ def save_results():
     if existing_results:
         # Update the existing results
         updated_results = existing_results
+        updated_results["timestamp"] = datetime.now().isoformat()
 
         # Get GPU count from existing results
         if "tests" in existing_results:
@@ -121,28 +142,27 @@ def save_results():
                     nccl_result["metrics"]["gpu_count"] = test["metrics"].get("gpu_count", 0)
                     break
 
-        # Update timestamp
-        updated_results["timestamp"] = datetime.now().isoformat()
-
-        # Append our test results
-        updated_results["tests"].append(nccl_result)
-
         # Update overall status
         updated_results["status"] = "PASS" if all(
             test.get("status") == "PASS" for test in updated_results["tests"]
         ) else "FAIL"
 
-        # Write updated results
-        with open(temp_file, 'w') as f:
-            json.dump(updated_results, f, indent=2)
+        # Add our test results
+        updated_results["tests"].append(nccl_result)
     else:
         # Create new results structure
         nccl_result["metrics"]["gpu_count"] = MIN_GPU_COUNT
         record_error(f"No existing results found, using fallback GPU count: {MIN_GPU_COUNT}")
+        updated_results = {
+            "node": NODE_NAME,
+            "timestamp": datetime.now().isoformat(),
+            "status": nccl_result["status"],
+            "tests": [nccl_result]
+        }
 
-        result["tests"].append(nccl_result)
-        with open(temp_file, 'w') as f:
-            json.dump(result, f, indent=2)
+    # Write updated results
+    with open(temp_file, 'w') as f:
+        json.dump(updated_results, f, indent=2)
 
     # Atomic rename
     os.rename(temp_file, results_file)
@@ -180,8 +200,9 @@ try:
             test_result = run_nccl_test(size=size)
             if test_result:
                 nccl_result["metrics"]["tests"].append(test_result)
-                bandwidths.append(test_result["bandwidth"])
-                latencies.append(test_result["latency"])
+                if test_result["bandwidth"] > 0:  # Only add valid results
+                    bandwidths.append(test_result["bandwidth"])
+                    latencies.append(test_result["latency"])
 
                 # Check against thresholds
                 if test_result["bandwidth"] < EXPECTED_BANDWIDTH * 0.8:
@@ -189,7 +210,7 @@ try:
                 if test_result["latency"] > EXPECTED_LATENCY * 1.2:
                     record_error(f"Latency above threshold for size {size}: {test_result['latency']} us")
 
-        # Calculate summary metrics
+        # Calculate summary metrics (only if we have valid results)
         if bandwidths:
             nccl_result["metrics"]["summary"]["avg_bandwidth"] = sum(bandwidths) / len(bandwidths)
             nccl_result["metrics"]["summary"]["min_bandwidth"] = min(bandwidths)
