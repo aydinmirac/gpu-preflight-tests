@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: storage-tests
+spec:
+  templates:
+  - name: storage-test
+    inputs:
+      parameters:
+      - name: node
+      - name: githubRepo
+      - name: gpuHealthImage
+      - name: minSeqReadMBps
+      - name: minRandReadIOPS
+      - name: maxRandP95LatMs
+    container:
+      image: "{{inputs.parameters.gpuHealthImage}}"
+      command: ["sh", "-c"]
+      args:
+        - |
+          # OPTIONAL: install fio if it's not baked into the image (requires apt + network)
+          command -v fio >/dev/null 2>&1 || (apt-get update && apt-get install -y fio)
+
+          if [ -d "/workspace/repo" ]; then
+            cd /workspace/repo
+            rm -f .git/index.lock
+            git fetch --all
+            git reset --hard origin/main
+          else
+            git clone --depth 1 {{inputs.parameters.githubRepo}} /workspace/repo
+          fi
+
+          python3 /workspace/repo/scripts/storage_test.py
+      env:
+      - name: NODE_NAME
+        value: "{{inputs.parameters.node}}"
+      - name: STORAGE_DIR
+        value: "/results/preflight-storage"
+      - name: MIN_SEQ_READ_MBPS
+        value: "{{inputs.parameters.minSeqReadMBps}}"
+      - name: MIN_RAND_READ_IOPS
+        value: "{{inputs.parameters.minRandReadIOPS}}"
+      - name: MAX_RAND_P95_LAT_MS
+        value: "{{inputs.parameters.maxRandP95LatMs}}"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: workspace
+        mountPath: /results
+    nodeSelector:
+      kubernetes.io/hostname: "{{inputs.parameters.node}}"
+    tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+    volumes:
+    - name: workspace
+      persistentVolumeClaim:
+        claimName: preflight-tests-workspace

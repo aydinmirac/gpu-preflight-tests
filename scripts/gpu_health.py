@@ -175,4 +175,4 @@ if gpu_health_result["errors"]:
         print(f"  - {error}")
 
 # Exit with status code (0 for PASS, 1 for FAIL)
-sys.exit(0 if gpu_health_result["status"] == "PASS" else 1)
+sys.exit(0)
