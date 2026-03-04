@@ -55,26 +55,75 @@ def run_command(cmd):
         record_error(f"Unexpected error running {cmd}: {str(e)}")
         return None
 
-def parse_nccl_output(output):
-    """Parse NCCL test output to extract bandwidth and latency"""
-    # Check for UCX errors
-    if "UCX ERROR" in output:
-        record_error("UCX memory allocation error detected")
+def parse_size_to_bytes(size_str: str) -> int:
+    """
+    Convert '1M', '32M', '1G' to bytes. Supports K/M/G/T (base-2).
+    """
+    s = size_str.strip().upper()
+    m = re.match(r"^(\d+)([KMGTP]?)B?$", s)
+    if not m:
+        raise ValueError(f"Unrecognized size: {size_str}")
+    val = int(m.group(1))
+    unit = m.group(2)
+    scale = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4, "P": 1024**5}[unit]
+    return val * scale
+
+
+def parse_nccl_output(output: str, expected_max_size: str = None):
+    """
+    Parse NCCL all_reduce_perf output.
+    Returns (bandwidth_GBps, latency_us) for the max-size row (or expected_max_size if provided).
+    Uses out-of-place columns: time(us) and algbw(GB/s).
+    """
+    # Record UCX errors if present, but don't stop parsing
+    if "UCX  ERROR" in output or "UCX ERROR" in output:
+        record_error("UCX error detected in output (may affect performance/results)")
+
+    target_bytes = None
+    if expected_max_size:
+        try:
+            target_bytes = parse_size_to_bytes(expected_max_size)
+        except ValueError:
+            target_bytes = None
+
+    rows = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # data rows start with an integer size in bytes
+        if not re.match(r"^\d+", line):
+            continue
+
+        parts = line.split()
+        # Expected columns for each row:
+        # size count type redop root  time  algbw  busbw  #wrong  time  algbw  busbw  #wrong
+        if len(parts) < 13:
+            continue
+
+        try:
+            size_b = int(parts[0])
+            out_time_us = float(parts[5])
+            out_algbw = float(parts[6])
+            # if you prefer in-place, use:
+            # in_time_us = float(parts[9])
+            # in_algbw = float(parts[10])
+        except ValueError:
+            continue
+
+        rows.append((size_b, out_algbw, out_time_us))
+
+    if not rows:
         return None, None
 
-    # Find the last line with bandwidth data
-    lines = output.split('\n')
-    for line in reversed(lines):
-        if "out-of-place" in line and "Bandwidth" not in line:
-            parts = line.split()
-            if len(parts) >= 7:
-                try:
-                    bandwidth = float(parts[4])  # algbw column
-                    latency = float(parts[2])    # time column
-                    return bandwidth, latency
-                except (ValueError, IndexError):
-                    continue
-    return None, None
+    # pick row that matches -e size if possible, else pick the largest size row
+    if target_bytes is not None:
+        for (sb, bw, lat) in rows:
+            if sb == target_bytes:
+                return bw, lat
+
+    sb, bw, lat = max(rows, key=lambda x: x[0])
+    return bw, lat
 
 def run_nccl_test(size="1G"):
     """Run NCCL all_reduce_perf test directly"""

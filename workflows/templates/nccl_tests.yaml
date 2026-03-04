@@ -18,11 +18,27 @@ spec:
       command: ["sh", "-c"]
       args:
         - |
-          # Clone repo if missing
-          if [ ! -d "/workspace/repo/.git" ]; then
-            git clone --depth 1 {{inputs.parameters.githubRepo}} /workspace/repo
+          # Set UCX environment variables
+          export UCX_MEMTYPE_CACHE=n
+          export UCX_TLS=tcp
+          export UCX_RNDV_SCHEME=put_zcopy
+          export UCX_IB_DISABLE=1
+          export UCX_MAX_RNDV_RAILS=1
+
+          # Additional NCCL settings
+          export NCCL_DEBUG=INFO
+          export NCCL_ALGO=Tree
+          export NCCL_PROTO=Simple
+          export NCCL_NET_GDR_LEVEL=0
+
+          # Clean up any existing Git lock files
+          if [ -d "/workspace/repo" ]; then
+            cd /workspace/repo
+            rm -f .git/index.lock
+            git fetch --all
+            git reset --hard origin/main
           else
-            cd /workspace/repo && git pull
+            git clone --depth 1 {{inputs.parameters.githubRepo}} /workspace/repo
           fi
 
           # Run NCCL tests
@@ -41,12 +57,10 @@ spec:
         value: "{{inputs.parameters.expectedBandwidth}}"
       - name: EXPECTED_LATENCY
         value: "{{inputs.parameters.expectedLatency}}"
-      - name: UCX_MEMTYPE_CACHE
-        value: "n"
-      - name: UCX_TLS
-        value: "tcp"
-      - name: UCX_RNDV_SCHEME
-        value: "put_zcopy"
+      securityContext:
+        runAsUser: 0 
+        capabilities:
+          add: ["IPC_LOCK"]
       volumeMounts:
       - name: workspace
         mountPath: /workspace
