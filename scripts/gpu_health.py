@@ -141,7 +141,7 @@ except Exception as e:
 # Write results to JSON file
 try:
     os.makedirs("/results", exist_ok=True)
-    output_file = f"/results/{NODE_NAME}-gpu_health.json"
+    output_file = f"/results/{NODE_NAME}-results.json"
 
     temp_file = f"{output_file}.tmp"
     with open(temp_file, "w") as f:
