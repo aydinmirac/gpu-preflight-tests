@@ -31,9 +31,9 @@ spec:
           python3 /workspace/repo/scripts/gpu_health.py
       resources:
         requests:
-          nvidia.com/gpu: {{inputs.parameters.minGpuCount}}
+          nvidia.com/gpu: "{{inputs.parameters.minGpuCount}}"
         limits:
-          nvidia.com/gpu: {{inputs.parameters.minGpuCount}}
+          nvidia.com/gpu: "{{inputs.parameters.minGpuCount}}"
       env:
       - name: NODE_NAME
         value: "{{inputs.parameters.node}}"
