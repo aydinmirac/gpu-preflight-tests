@@ -64,7 +64,7 @@ spec:
       volumeMounts:
       - name: workspace
         mountPath: /workspace
-      - name: workspace
+      - name: results
         mountPath: /results
     nodeSelector:
       kubernetes.io/hostname: "{{inputs.parameters.node}}"
