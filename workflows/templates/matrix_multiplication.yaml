@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: compute-tests
+spec:
+  templates:
+  - name: compute-test
+    inputs:
+      parameters:
+      - name: node
+      - name: githubRepo
+      - name: computeImage
+      - name: minTflops
+    container:
+      image: "{{inputs.parameters.computeImage}}"
+      command: ["sh", "-c"]
+      args:
+        - |
+          git clone --depth 1 {{inputs.parameters.githubRepo}} /workspace/repo || true
+          cd /workspace/repo || exit 1
+          python3 /workspace/repo/scripts/compute_test.py
+      env:
+      - name: NODE_NAME
+        value: "{{inputs.parameters.node}}"
+      - name: MIN_TFLOPS
+        value: "{{inputs.parameters.minTflops}}"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: results
+        mountPath: /results
+      resources:
+        requests:
+          nvidia.com/gpu: 8
+        limits:
+          nvidia.com/gpu: 8
+    nodeSelector:
+      kubernetes.io/hostname: "{{inputs.parameters.node}}"
+    tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+    volumes:
+    - name: workspace
+      emptyDir: {}
+    - name: results
+      persistentVolumeClaim:
+        claimName: preflight-tests-workspace

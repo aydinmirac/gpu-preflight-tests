@@ -33,6 +33,10 @@ spec:
       value: "2000"
     - name: maxRandP95LatMs
       value: "5.0"
+    - name: computeImage
+      value: "pytorch/pytorch:2.2.2-cuda12.1-cudnn8-runtime"
+    - name: minTflops
+      value: "50"
 
   templates:
   - name: preflight-checks
@@ -97,4 +101,19 @@ spec:
             value: "{{workflow.parameters.minRandReadIOPS}}"
           - name: maxRandP95LatMs
             value: "{{workflow.parameters.maxRandP95LatMs}}"
+        withParam: "{{workflow.parameters.nodes}}"
+    - - name: run-compute-tests
+        templateRef:
+          name: compute-tests
+          template: compute-test
+        arguments:
+          parameters:
+          - name: node
+            value: "{{item}}"
+          - name: githubRepo
+            value: "{{workflow.parameters.githubRepo}}"
+          - name: computeImage
+            value: "{{workflow.parameters.computeImage}}"
+          - name: minTflops
+            value: "{{workflow.parameters.minTflops}}"
         withParam: "{{workflow.parameters.nodes}}"
