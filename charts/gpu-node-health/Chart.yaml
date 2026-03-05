@@ -1,6 +1,0 @@
-apiVersion: v2
-name: gpu-node-health
-description: GPU node preflight validation
-type: application
-version: 0.1.0
-appVersion: "1.0"
