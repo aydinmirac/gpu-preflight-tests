@@ -1,5 +1,5 @@
 githubRepo: "https://github.com/aydinmirac/gpu-preflight-tests.git"
-nodes: '["node-1","node2"]'  # JSON array of node names
+nodes: '["computeinstance","computeinstance"]'  # JSON array of node names
 
 # GPU health check configuration
 gpuHealthImage: "ghcr.io/coreweave/nccl-tests:12.8.1-devel-ubuntu22.04-nccl2.29.2-1-2276a5e"  # Default image
@@ -8,3 +8,21 @@ driverVersion: "570"
 cudaVersion: "12.8"
 maxTemperature: "85"
 maxEccErrors: "0"
+
+# NCCL Tests
+expectedBandwidth: "100"  # GB/s, adjust based on your GPU model
+expectedLatency: "100"   # microseconds, adjust based on your GPU model
+minSeqReadMBps: "500" # MB/s
+minRandReadIOPS: "2000" # IOPS
+maxRandP95LatMs: "5.0" # ms
+
+# PYTORCH Parameters
+computeImage: "pytorch/pytorch:2.9.0-cuda12.8-cudnn9-runtime"
+minTflops: "50"
+
+# Node Policies
+preflightLabelKey: "preflight-status"
+preflightTaintKey: "preflight-not-ready"
+preflightTaintEffect: "NoSchedule"
+preflightLastRunAnnotationKey: "preflight-last-run"
+preflightFailuresAnnotationKey: "preflight-failing-tests"
