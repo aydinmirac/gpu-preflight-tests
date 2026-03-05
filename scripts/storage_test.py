@@ -179,7 +179,7 @@ def main():
         "--direct=1",
         "--time_based=1",
         f"--runtime={RAND_RUNTIME}",
-        "--filename=preflight_randread.dat"
+        f"--filename=preflight_{NODE_NAME}randread.dat"
     ])
     if rand_json:
         mbps, iops, p95 = fio_extract_read_metrics(rand_json)

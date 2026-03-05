@@ -74,5 +74,7 @@ spec:
       effect: "NoSchedule"
     volumes:
     - name: workspace
+      emptyDir: {}
+    - name: results
       persistentVolumeClaim:
         claimName: preflight-tests-workspace

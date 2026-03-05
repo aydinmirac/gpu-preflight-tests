@@ -27,6 +27,12 @@ spec:
       value: "10"   # Adjust based on your GPU model
     - name: nodes
       value: '["computeinstance","computeinstance"]'
+    - name: minSeqReadMBps
+      value: "500"
+    - name: minRandReadIOPS
+      value: "2000"
+    - name: maxRandP95LatMs
+      value: "5.0"
 
   templates:
   - name: preflight-checks
@@ -72,4 +78,23 @@ spec:
             value: "{{workflow.parameters.expectedBandwidth}}"
           - name: expectedLatency
             value: "{{workflow.parameters.expectedLatency}}"
+        withParam: "{{workflow.parameters.nodes}}"
+    - - name: run-storage-tests
+        templateRef:
+          name: storage-tests
+          template: storage-test
+        arguments:
+          parameters:
+          - name: node
+            value: "{{item}}"
+          - name: githubRepo
+            value: "{{workflow.parameters.githubRepo}}"
+          - name: gpuHealthImage
+            value: "{{workflow.parameters.gpuHealthImage}}"
+          - name: minSeqReadMBps
+            value: "{{workflow.parameters.minSeqReadMBps}}"
+          - name: minRandReadIOPS
+            value: "{{workflow.parameters.minRandReadIOPS}}"
+          - name: maxRandP95LatMs
+            value: "{{workflow.parameters.maxRandP95LatMs}}"
         withParam: "{{workflow.parameters.nodes}}"
