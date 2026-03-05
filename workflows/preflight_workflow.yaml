@@ -37,6 +37,16 @@ spec:
       value: "pytorch/pytorch:2.2.2-cuda12.1-cudnn8-runtime"
     - name: minTflops
       value: "50"
+    - name: preflightLabelKey
+      value: "preflight-status"
+    - name: preflightTaintKey
+      value: "preflight-not-ready"
+    - name: preflightTaintEffect
+      value: "NoSchedule"
+    - name: preflightLastRunAnnotationKey
+      value: "preflight-last-run"
+    - name: preflightFailuresAnnotationKey
+      value: "preflight-failing-tests"
 
   templates:
   - name: preflight-checks
@@ -117,3 +127,23 @@ spec:
           - name: minTflops
             value: "{{workflow.parameters.minTflops}}"
         withParam: "{{workflow.parameters.nodes}}"
+    - - name: apply-node-policy
+        templateRef:
+          name: node-policy
+          template: apply-node-policy
+        arguments:
+          parameters:
+          - name: githubRepo
+            value: "{{workflow.parameters.githubRepo}}"
+          - name: nodes
+            value: "{{workflow.parameters.nodes}}"
+          - name: preflightLabelKey
+            value: "preflight-status"
+          - name: preflightTaintKey
+            value: "preflight-not-ready"
+          - name: preflightTaintEffect
+            value: "NoSchedule"
+          - name: preflightLastRunAnnotationKey
+            value: "preflight-last-run"
+          - name: preflightFailuresAnnotationKey
+            value: "preflight-failing-tests"

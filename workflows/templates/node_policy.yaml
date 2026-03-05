@@ -1,0 +1,58 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: node-policy
+spec:
+  templates:
+  - name: apply-node-policy
+    serviceAccountName: preflight-node-labeler
+    inputs:
+      parameters:
+      - name: githubRepo
+      - name: nodes
+      - name: preflightLabelKey
+      - name: preflightTaintKey
+      - name: preflightTaintEffect
+      - name: preflightLastRunAnnotationKey
+      - name: preflightFailuresAnnotationKey
+    container:
+      image: python:3.11-slim
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -e
+          apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl
+          rm -rf /var/lib/apt/lists/*
+
+          curl -L -o /usr/local/bin/kubectl \
+            https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
+          chmod +x /usr/local/bin/kubectl
+
+          git clone --depth 1 {{inputs.parameters.githubRepo}} /workspace/repo
+          python3 /workspace/repo/scripts/label_nodes.py
+      env:
+      - name: RESULTS_DIR
+        value: "/results"
+      - name: NODES
+        value: "{{inputs.parameters.nodes}}"
+      - name: PREFLIGHT_LABEL_KEY
+        value: "{{inputs.parameters.preflightLabelKey}}"
+      - name: PREFLIGHT_TAINT_KEY
+        value: "{{inputs.parameters.preflightTaintKey}}"
+      - name: PREFLIGHT_TAINT_EFFECT
+        value: "{{inputs.parameters.preflightTaintEffect}}"
+      - name: PREFLIGHT_LAST_RUN_ANNOTATION_KEY
+        value: "{{inputs.parameters.preflightLastRunAnnotationKey}}"
+      - name: PREFLIGHT_FAILURES_ANNOTATION_KEY
+        value: "{{inputs.parameters.preflightFailuresAnnotationKey}}"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: results
+        mountPath: /results
+    volumes:
+    - name: workspace
+      emptyDir: {}
+    - name: results
+      persistentVolumeClaim:
+        claimName: preflight-tests-workspace

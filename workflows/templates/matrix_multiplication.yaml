@@ -16,8 +16,14 @@ spec:
       command: ["sh", "-c"]
       args:
         - |
+          set -e
+          apt-get update
+          apt-get install -y --no-install-recommends git
+          rm -rf /var/lib/apt/lists/*
+          
           git clone --depth 1 {{inputs.parameters.githubRepo}} /workspace/repo || true
           cd /workspace/repo || exit 1
+          
           python3 /workspace/repo/scripts/compute_test.py
       env:
       - name: NODE_NAME
