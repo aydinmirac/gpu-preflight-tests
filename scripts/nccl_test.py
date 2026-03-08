@@ -127,7 +127,6 @@ def parse_nccl_output(output: str, expected_max_size: str = None):
 
 def run_nccl_test(size="1G"):
     """Run NCCL all_reduce_perf test directly"""
-    # Ensure we have a valid GPU count
     gpu_count = nccl_result['metrics']['gpu_count']
     if gpu_count < MIN_GPU_COUNT:
         record_error(f"Insufficient GPUs for NCCL test. Need at least {MIN_GPU_COUNT}, found: {gpu_count}")
@@ -136,7 +135,7 @@ def run_nccl_test(size="1G"):
     # Set up GPU selection
     gpu_list = ",".join(str(i) for i in range(gpu_count))
 
-    # Run the test directly using the correct path
+    # Run the test
     cmd = f"CUDA_VISIBLE_DEVICES={gpu_list} /opt/nccl-tests/build/all_reduce_perf -b 8 -e {size} -f 2 -g {gpu_count}"
 
     output = run_command(cmd)
@@ -196,7 +195,7 @@ def save_results():
             test.get("status") == "PASS" for test in updated_results["tests"]
         ) else "FAIL"
 
-        # Add our test results
+        # Add test results
         updated_results["tests"].append(nccl_result)
     else:
         # Create new results structure
@@ -213,7 +212,6 @@ def save_results():
     with open(temp_file, 'w') as f:
         json.dump(updated_results, f, indent=2)
 
-    # Atomic rename
     os.rename(temp_file, results_file)
     print(f"Results written to {results_file}")
 
@@ -277,7 +275,7 @@ try:
                         f"Latency above threshold for size {size}: {test_result['latency']} us"
                     )
 
-        # Calculate summary metrics (only if we have valid results)
+        # Calculate summary metrics
         if bandwidths:
             nccl_result["metrics"]["summary"]["avg_bandwidth"] = sum(bandwidths) / len(bandwidths)
             nccl_result["metrics"]["summary"]["min_bandwidth"] = min(bandwidths)

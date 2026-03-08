@@ -6,10 +6,10 @@ from datetime import datetime
 
 NODE_NAME = os.environ.get("NODE_NAME", "unknown")
 
-# Benchmark directory on shared filesystem (PVC mounted to /results in your workflow)
+# Benchmark directory on shared filesystem
 STORAGE_DIR = os.environ.get("STORAGE_DIR", "/results/preflight-storage")
 
-# Thresholds (tune via workflow parameters)
+# Thresholds
 MIN_SEQ_READ_MBPS = float(os.environ.get("MIN_SEQ_READ_MBPS", "500"))      # MB/s
 MIN_RAND_READ_IOPS = float(os.environ.get("MIN_RAND_READ_IOPS", "2000"))   # IOPS
 MAX_RAND_P95_LAT_MS = float(os.environ.get("MAX_RAND_P95_LAT_MS", "5.0"))  # ms
@@ -79,7 +79,7 @@ def fio_extract_read_metrics(fio_json):
     job = fio_json["jobs"][0]
     read = job.get("read", {})
 
-    # Bandwidth: fio's bw is typically KiB/s (in many versions), bw_bytes is bytes/s.
+    # Bandwidth: fio's bw is typically KiB/s, bw_bytes is bytes/s.
     bw_bytes = read.get("bw_bytes", None)
     bw_kib = read.get("bw", None)
 
@@ -93,7 +93,6 @@ def fio_extract_read_metrics(fio_json):
     iops = float(read.get("iops", 0.0))
 
     # Latency percentiles:
-    # Prefer clat_ns percentiles if present, fallback to lat_ns.
     p95_ms = 0.0
     clat = read.get("clat_ns", {})
     lat = read.get("lat_ns", {})
@@ -105,7 +104,6 @@ def fio_extract_read_metrics(fio_json):
         pct = lat.get("percentile", None)
 
     if isinstance(pct, dict):
-        # fio percentile keys look like "95.000000"
         v = pct.get("95.000000", None)
         if v is not None:
             p95_ms = float(v) / 1e6  # ns -> ms
@@ -116,7 +114,7 @@ def load_existing_results():
     if os.path.exists(RESULTS_FILE):
         with open(RESULTS_FILE, "r") as f:
             return json.load(f)
-    # if it doesn't exist, create a minimal structure
+        
     return {
         "node": NODE_NAME,
         "timestamp": datetime.now().isoformat(),
@@ -200,7 +198,7 @@ def main():
 
     existing = load_existing_results()
     save_results(existing)
-    return 0  # always success for Argo
+    return 0 
 
 if __name__ == "__main__":
     raise SystemExit(main())

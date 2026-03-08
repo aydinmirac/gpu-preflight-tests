@@ -7,7 +7,6 @@ import sys
 RESULTS_DIR = os.environ.get("RESULTS_DIR", "/results")
 NODES = json.loads(os.environ.get("NODES", "[]"))
 
-# Defaults as requested (no company/domain prefix)
 LABEL_KEY = os.environ.get("PREFLIGHT_LABEL_KEY", "preflight-status")
 TAINT_KEY = os.environ.get("PREFLIGHT_TAINT_KEY", "preflight-not-ready")
 TAINT_EFFECT = os.environ.get("PREFLIGHT_TAINT_EFFECT", "NoSchedule")
@@ -49,10 +48,10 @@ def main():
         else:
             failing_tests = ["missing-results"]
 
-        # Label node with scheduler-friendly status
+        # Label node with status
         run(["kubectl", "label", "node", node, f"{LABEL_KEY}={status}", "--overwrite"])
 
-        # Annotations for metadata (timestamps are not valid label values)
+        # Annotations for metadata
         if ts:
             run(["kubectl", "annotate", "node", node, f"{LAST_RUN_ANN_KEY}={ts}", "--overwrite"])
 

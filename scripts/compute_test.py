@@ -61,7 +61,6 @@ def main():
     dtype = torch.float16 if DTYPE == "fp16" else torch.bfloat16
     ngpu = torch.cuda.device_count()
 
-    # Use TF32 for fp32 paths if ever used; harmless here.
     torch.backends.cuda.matmul.allow_tf32 = True
 
     for dev in range(ngpu):
@@ -108,7 +107,7 @@ def main():
 
     existing = load_existing()
     save(existing)
-    return 0  # always 0 for Argo
+    return 0 
 
 if __name__ == "__main__":
     raise SystemExit(main())
