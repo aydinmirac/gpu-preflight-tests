@@ -154,6 +154,22 @@ To copy the results from the pod:
 kubectl cp preflight-test-pod:/results/<nodename>-results.json <nodename>-results.json
 ```
 
+## Cluster Dashboard
+The repository also provides a static frontend showing the cluster and node status. To deploy the dashboard, apply the `dashboard_pod.yaml` and `dashboard_service.yaml` files without changing any values.
+```bash
+kubectl apply -f workflows/dashboard/
+```
+
+Then use Kubernetes port forwarding to access the dashboard locally:
+```bash
+kubectl port-forward svc/gpu-dashboard 8000:8000
+```
+
+Then open `http://localhost:8000` in your browser to see the dashboard:
+
+![dashboard](./images/dashboard.png)
+
+
 ## Planned Improvements
 
 -   Clean up temporary files generated during the storage test
