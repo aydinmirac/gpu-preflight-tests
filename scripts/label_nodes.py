@@ -27,6 +27,43 @@ def extract_failing_tests(data):
             failing.append(t.get("test", "unknown"))
     return failing
 
+def get_node_taints(node):
+    """Return list of taint strings currently on the node."""
+    result = subprocess.run(
+        ["kubectl", "get", "node", node, "-o", "jsonpath={.spec.taints}"],
+        capture_output=True, text=True
+    )
+    raw = result.stdout.strip()
+    if not raw or raw == "null":
+        return []
+    taints = json.loads(raw)
+    return [f"{t['key']}={t.get('value', '')}:{t['effect']}" for t in taints]
+
+def taint_exists(node, key, effect):
+    """Check if a specific taint key+effect is already applied."""
+    result = subprocess.run(
+        ["kubectl", "get", "node", node, "-o", "jsonpath={.spec.taints}"],
+        capture_output=True, text=True
+    )
+    raw = result.stdout.strip()
+    if not raw or raw == "null":
+        return False
+    taints = json.loads(raw)
+    return any(t.get("key") == key and t.get("effect") == effect for t in taints)
+
+def apply_taint(node, key, value, effect):
+    """Apply taint, overwriting if it already exists."""
+    if taint_exists(node, key, effect):
+        subprocess.call(["kubectl", "taint", "node", node, f"{key}:{effect}-"])
+    run(["kubectl", "taint", "node", node, f"{key}={value}:{effect}"])
+
+def remove_taint(node, key, effect):
+    """Remove taint only if it exists, avoiding 'not found' errors."""
+    if taint_exists(node, key, effect):
+        run(["kubectl", "taint", "node", node, f"{key}:{effect}-"])
+    else:
+        print(f"[INFO] Taint {key}:{effect} not present on {node}, skipping removal.")
+
 def main():
     if not NODES:
         print("No nodes provided in NODES env", file=sys.stderr)
@@ -62,12 +99,9 @@ def main():
 
         # Taint policy
         if status != "ready":
-            try:
-                run(["kubectl", "taint", "node", node, f"{TAINT_KEY}=true:{TAINT_EFFECT}", "--overwrite"])
-            except subprocess.CalledProcessError:
-                run(["kubectl", "taint", "node", node, f"{TAINT_KEY}=true:{TAINT_EFFECT}"])
+            apply_taint(node, TAINT_KEY, "true", TAINT_EFFECT)
         else:
-            subprocess.call(["kubectl", "taint", "node", node, f"{TAINT_KEY}:{TAINT_EFFECT}-"])
+            remove_taint(node, TAINT_KEY, TAINT_EFFECT)
 
     return 0
 
